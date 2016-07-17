@@ -52,8 +52,6 @@ SoftwareSerial btSerial(BT_RX_PIN, BT_TX_PIN);
 boolean new_cycle;
 int cycles;
 int too_much_draw_counter;
-float temperatures[] = { 180, 200, 210, 215 };
-byte selected_temp;
 
 // For smoother fading
 const unsigned char cie[256] = {
@@ -99,12 +97,7 @@ void setup() {
     pinMode(BUTTON_PIN, INPUT);
     pinMode(VIBRATOR_PIN, OUTPUT);
 
-    // check if, user wants to change temperatur
-    check_temp_change();
-    
     desired_temp = get_desired_temp();
-    print_temp();
-    blink_for_n_times(selected_temp + 1, HIGH);
     
     // Setting up max31865
     while (!max_init()) {
@@ -213,7 +206,6 @@ void heatUpChamber() {
     }
 }
 
-
 void printStatus() {
     int raw = analogRead(A3);
     Serial.print((int) desired_temp);
@@ -261,43 +253,14 @@ void standby() {
     temp = max_get_temp();
 }
 
-float get_desired_temp() {
-    selected_temp = EEPROM.read(TEMPERATURE_EEPROM_ADDRESS);
-    
-    if (selected_temp >= (sizeof(temperatures)/sizeof(*temperatures))) {
-        selected_temp = 0;
-        EEPROM.write(TEMPERATURE_EEPROM_ADDRESS, selected_temp);
-    }
-    return temperatures[selected_temp];
-}
-
-void check_temp_change() {
-    Serial.println("Checking for user input");
-    byte counter = 0;
-    while (digitalRead(BUTTON_PIN) == HIGH & counter < 255) {
-        analogWrite(LED_PIN, cie[counter]);
-        counter++;
-        delay(5);
-    }
-    digitalWrite(LED_PIN, LOW);
-    
-    if (digitalRead(BUTTON_PIN) == HIGH) {
-        vibrate_for_ms(200);
-        // wait  for the user to let go of the button
-        while (digitalRead(BUTTON_PIN) == HIGH);
-        change_temp();
-    }
-}
-
 void check_serial() {
     if (btSerial.available()) {
         char command = btSerial.read();
-        byte value;
+        byte value = 0;
         switch (command) {
             case 't':
-                value = btSerial.read();
-                btSerial.print("Got: ");
-                btSerial.println(value);
+                while (!btSerial.available());
+                set_desired_temp(btSerial.read());
                 break;
             default:
                 btSerial.println("Unknown Command");
@@ -305,75 +268,13 @@ void check_serial() {
     }
 }
 
-void change_temp() {
-    Serial.println("Changing Temperature");
-    byte number_of_temps = (sizeof(temperatures)/sizeof(*temperatures));
-    
-    selected_temp = EEPROM.read(TEMPERATURE_EEPROM_ADDRESS);
-    print_temp();
-    
-    // cycle through temps
-    while(true) {
-        if (selected_temp > number_of_temps) {
-            selected_temp = 0;
-            EEPROM.write(TEMPERATURE_EEPROM_ADDRESS, selected_temp);
-        }
-        
-        // blink temp and wait for userinput
-        blink_for_n_times(selected_temp + 1, HIGH);
-        if (digitalRead(BUTTON_PIN) == HIGH) {
-            digitalWrite(LED_PIN, HIGH);
-            // debounce
-            delay(20);
-            // wait for release
-            delay_with_interrupt(2000, LOW);
-            if (digitalRead(BUTTON_PIN) == HIGH) {
-                // user wants to exit temp selection
-                digitalWrite(LED_PIN, LOW);
-                vibrate_for_ms(200);
-                // blink 3 times
-                for (byte n = 0; n < 3; n++) {
-                    delay(100);
-                    digitalWrite(LED_PIN, HIGH);
-                    delay(100);
-                    digitalWrite(LED_PIN, LOW);
-                }
-                delay(200);
-                break;
-            }
-            digitalWrite(LED_PIN, LOW);
-            // debounce
-            delay(20);
-            selected_temp++;
-            EEPROM.write(TEMPERATURE_EEPROM_ADDRESS, selected_temp);
-            print_temp();
-        }
-        delay_with_interrupt(1000, HIGH);
-    }
+float get_desired_temp() {
+    return (float) EEPROM.read(TEMPERATURE_EEPROM_ADDRESS);
 }
 
-void blink_for_n_times(byte n, int interrupting_button_state) {
-    for (byte blinks = 0; blinks < n; blinks++) {
-        delay_with_interrupt(300, interrupting_button_state);
-        byte counter = 0;
-        while (digitalRead(BUTTON_PIN) != interrupting_button_state & counter < 255) {
-            analogWrite(LED_PIN, counter);
-            counter++;
-            delay(1);
-        }
-        digitalWrite(LED_PIN, LOW);
-    }
-}
-
-void print_temp() {
-    byte number_of_temps = (sizeof(temperatures)/sizeof(*temperatures));
-    Serial.print("Selected temperature: ");
-    Serial.print(get_desired_temp());
-    Serial.print(", (");
-    Serial.print(selected_temp + 1);
-    Serial.print("/");
-    Serial.print(number_of_temps);
-    Serial.println(")");
+void set_desired_temp(byte new_temp) {
+    EEPROM.write(TEMPERATURE_EEPROM_ADDRESS, new_temp);
+    desired_temp = (float) new_temp;
 }
 
 void delay_with_interrupt(int time, int interrupting_button_state) {
