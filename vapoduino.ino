@@ -255,6 +255,7 @@ void standby() {
 
 void check_serial() {
     if (btSerial.available()) {
+        digitalWrite(MOSFET_GATE_PIN, LOW);
         char command = btSerial.read();
         byte value = 0;
         switch (command) {
