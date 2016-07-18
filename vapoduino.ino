@@ -39,6 +39,8 @@
 #define MAX_HEATING_POWER 255
 
 #define VOLTAGE_DIVIDER 0.01505277f
+#define MAXIMUM_VOLTAGE 12.6f
+#define MINIMUM_VOLTAGE 11.0f
 
 #define STANDBY_TIMEOUT 1500
 #define TEMPERATURE_EEPROM_ADDRESS 0
@@ -121,9 +123,6 @@ void setup() {
     
     new_cycle = true;
     too_much_draw_counter = 0;
-    
-    // Startup complete, waiting for userinput
-    standby();
 }
 
 void loop() {
@@ -163,7 +162,7 @@ void loop() {
         
         // count till timeout
         if (cycles == STANDBY_TIMEOUT) {
-            standby();
+            vibrate_for_ms(1000);
             cycles = 0;
         }
         pid.SetMode(MANUAL);
@@ -214,7 +213,9 @@ void printStatus() {
     Serial.print(";");
     Serial.print(output);
     Serial.print(";");
-    Serial.println(raw * VOLTAGE_DIVIDER);
+    Serial.print(raw * VOLTAGE_DIVIDER);
+    Serial.print(";");
+    Serial.println(get_battery_percents(raw * VOLTAGE_DIVIDER));
     
     btSerial.print((int) desired_temp);
     btSerial.print(";");
@@ -222,35 +223,14 @@ void printStatus() {
     btSerial.print(";");
     btSerial.print(output);
     btSerial.print(";");
-    btSerial.println(raw * VOLTAGE_DIVIDER);
+    btSerial.print(raw * VOLTAGE_DIVIDER);
+    btSerial.print(";");
+    btSerial.println(get_battery_percents(raw * VOLTAGE_DIVIDER));
 }
 
 void error(String message) {
     Serial.println(message);
     digitalWrite(MOSFET_GATE_PIN, LOW);
-}
-
-void standby() {
-    Serial.println("Standby");
-    digitalWrite(MOSFET_GATE_PIN, LOW);
-    while (digitalRead(BUTTON_PIN) == LOW) {
-        for(int fadeValue = 0 ; fadeValue <= 255; fadeValue++) {
-            if (digitalRead(BUTTON_PIN) == HIGH) {
-                break;
-            }
-            analogWrite(LED_PIN, cie[fadeValue]);
-            delay(7); 
-        } 
-        for(int fadeValue = 255 ; fadeValue >= 0; fadeValue--) {
-            if (digitalRead(BUTTON_PIN) == HIGH) {
-                break;
-            }
-            analogWrite(LED_PIN, cie[fadeValue]); 
-            delay(7);              
-        }
-        delay_with_interrupt(1000, HIGH);
-    }
-    temp = max_get_temp();
 }
 
 void check_serial() {
@@ -271,6 +251,11 @@ void check_serial() {
 
 float get_desired_temp() {
     return (float) EEPROM.read(TEMPERATURE_EEPROM_ADDRESS);
+}
+
+int get_battery_percents(float voltage) {
+    int percent = (voltage - MINIMUM_VOLTAGE)/(MAXIMUM_VOLTAGE - MINIMUM_VOLTAGE) * 100;
+    return percent < 0 ? 0 : percent;
 }
 
 void set_desired_temp(byte new_temp) {
