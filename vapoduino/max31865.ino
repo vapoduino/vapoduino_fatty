@@ -1,3 +1,5 @@
+#include <Arduino.h>
+
 /*
  * Created 05/30/2014 - max31865.ino
  * 

@@ -1,20 +1,22 @@
+#include <Arduino.h>
+
 /*
  * Created 04/28/2014 - vapoduino.ino
- * 
+ *
  * Vapoduino - Arduino based controller for a Vaporizer.
- * 
+ *
  * Copyright (C) 2014 Benedikt Schlagberger
  *
  * This program is free software: you can redistribute it and/or modify
  * it under the terms of the GNU General Public License as published by
  * the Free Software Foundation, either version 3 of the License, or
  * any later version.
- * 
+ *
  * This program is distributed in the hope that it will be useful,
  * but WITHOUT ANY WARRANTY; without even the implied warranty of
  * MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
  * GNU General Public License for more details.
- * 
+ *
  * You should have received a copy of the GNU General Public License
  * along with this program.  If not, see <http://www.gnu.org/licenses/>.
  *
@@ -62,7 +64,7 @@ void setup() {
     Serial.println("#####################################");
     Serial.println("#####         VAPODUINO         #####");
     Serial.println("#####################################\n\n");
-    
+
     // Set pinmodes
     pinMode(MOSFET_GATE_PIN, OUTPUT);
     pinMode(LED_PIN, OUTPUT);
@@ -74,12 +76,12 @@ void setup() {
     pid_p = PID_P;
     pid_i = PID_I;
     pid_d = PID_D;
-    
+
     // Setting up max31865
     while (!max_init()) {
         error("Could not initialize sensor!");
     }
-    
+
     // Bugfix, don't know why...
     temp = max_get_temp();
     while (temp < 0) {
@@ -89,12 +91,12 @@ void setup() {
         Serial.print(temp);
         Serial.print(" ");
     }
-    
+
     // Start PID control
     temp = max_get_temp();
     pid.SetMode(AUTOMATIC);
-    
-    
+
+
     new_cycle = true;
     too_much_draw_counter = 0;
 
@@ -105,23 +107,23 @@ void setup() {
 
 void loop() {
     temp = max_get_temp();
-    
+
     digitalWrite(LED_PIN, LOW);
     digitalWrite(VIBRATOR_PIN, LOW);
 
     if (digitalRead(BUTTON_PIN) == HIGH) {
-        // reset standby timeout     
+        // reset standby timeout
         cycles = 0;
-        
+
         if (new_cycle) {
             heatUpChamber();
-            
+
             new_cycle = false;
             pid = PID(&temp, &output, &desired_temp, pid_p, pid_i, pid_d, DIRECT);
             pid.SetOutputLimits(0, 255);
             pid.SetMode(AUTOMATIC);
         }
-        
+
         pid.Compute();
         analogWrite(MOSFET_GATE_PIN, output);
         if (output == 255) {
@@ -137,7 +139,7 @@ void loop() {
         }
     } else {
         cycles ++;
-        
+
         // count till timeout
         if (cycles == STANDBY_TIMEOUT) {
             vibrate_for_ms(1000);
@@ -147,16 +149,16 @@ void loop() {
         output = 0;
         analogWrite(MOSFET_GATE_PIN, output);
         digitalWrite(LED_PIN, LOW);
-        
+
         new_cycle = true;
-        
+
         // debouncing the button
         delay(20);
     }
     printStatus();
 
     check_serial();
-    
+
     delay(50);
 }
 
@@ -166,18 +168,18 @@ void heatUpChamber() {
     pid = PID(&temp, &output, &heating_temp, PID_P_HEATING, PID_I_HEATING, PID_D_HEATING, DIRECT);
     pid.SetOutputLimits(0, MAX_HEATING_POWER);
     pid.SetMode(AUTOMATIC);
-    
+
     while (digitalRead(BUTTON_PIN) == HIGH && temp < desired_temp) {
         temp = max_get_temp();
-        
+
         digitalWrite(LED_PIN, HIGH);
         pid.Compute();
         analogWrite(MOSFET_GATE_PIN, output);
         printStatus();
-        
+
         delay(50);
     }
-    
+
     if (temp > desired_temp) {
         vibrate_for_ms(200);
     }
@@ -200,7 +202,7 @@ void printStatus() {
     Serial.print(raw * VOLTAGE_DIVIDER);
     Serial.print(";");
     Serial.println(get_battery_percents(raw * VOLTAGE_DIVIDER));
-    
+
     bt_serial.print((int) desired_temp);
     bt_serial.print(";");
     bt_serial.print(temp);
