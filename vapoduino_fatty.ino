@@ -32,9 +32,9 @@
 #define BT_RX_PIN 8
 #define BT_TX_PIN 7
 
-#define PID_P 19 // counter-"force" http://www.ascii-code.com/
-#define PID_I 12 // counter-offset
-#define PID_D 12 // dampen controlling, react on fast changes
+//#define PID_P 19 // counter-"force"
+//#define PID_I 12 // counter-offset
+//#define PID_D 12 // dampen controlling, react on fast changes
 #define PID_P_HEATING 3.6
 #define PID_I_HEATING 0.2
 #define PID_D_HEATING 4
@@ -46,6 +46,9 @@
 
 #define STANDBY_TIMEOUT 1500
 #define TEMPERATURE_EEPROM_ADDRESS 0
+#define PID_P_EEPROM_ADDRESS 1
+#define PID_I_EEPROM_ADDRESS 2
+#define PID_D_EEPROM_ADDRESS 3
 
 #include <PID_v1.h>
 #include <EEPROM.h>
@@ -61,6 +64,7 @@ int too_much_draw_counter;
 void setup() {
     Serial.begin(9600);
     bt_serial.begin(9600);
+
     Serial.println("#####################################");
     Serial.println("#####         VAPODUINO         #####");
     Serial.println("#####################################\n\n");
@@ -73,9 +77,7 @@ void setup() {
 
     desired_temp = get_desired_temp();
 
-    pid_p = PID_P;
-    pid_i = PID_I;
-    pid_d = PID_D;
+    loadPID();
 
     // Setting up max31865
     while (!max_init()) {
@@ -95,7 +97,6 @@ void setup() {
     // Start PID control
     temp = max_get_temp();
     pid.SetMode(AUTOMATIC);
-
 
     new_cycle = true;
     too_much_draw_counter = 0;
@@ -138,7 +139,7 @@ void loop() {
             digitalWrite(VIBRATOR_PIN, LOW);
         }
     } else {
-        cycles ++;
+        cycles++;
 
         // count till timeout
         if (cycles == STANDBY_TIMEOUT) {
@@ -187,24 +188,24 @@ void heatUpChamber() {
 
 void printStatus() {
     int raw = analogRead(A3);
-    Serial.print((int) desired_temp);
-    Serial.print(";");
-    Serial.print(pid_p);
-    Serial.print(";");
-    Serial.print(pid_i);
-    Serial.print(";");
-    Serial.print(pid_d);
-    Serial.print(";");
-    Serial.print(temp);
-    Serial.print(";");
-    Serial.print(output);
-    Serial.print(";");
-    Serial.print(raw * VOLTAGE_DIVIDER);
-    Serial.print(";");
-    Serial.println(get_battery_percents(raw * VOLTAGE_DIVIDER));
+//    Serial.print("Desired Temp: ");
+//    Serial.print((int) desired_temp);
+//    Serial.print(", Temp: ");
+//    Serial.print(temp);
+//    Serial.print(", P: ");
+//    Serial.print(pid_p);
+//    Serial.print(", I: ");
+//    Serial.print(pid_i);
+//    Serial.print(", D: ");
+//    Serial.print(pid_d);
+//    Serial.print(", Heat: ");
+//    Serial.print(output);
+//    Serial.print(", Volts: ");
+//    Serial.print(raw * VOLTAGE_DIVIDER);
+//    Serial.print(", Percents: ");
+//    Serial.println(get_battery_percents(raw * VOLTAGE_DIVIDER));
 
-    bt_serial.print((int) desired_temp);
-    bt_serial.print(";");
+    bt_serial.print("s;");
     bt_serial.print(temp);
     bt_serial.print(";");
     bt_serial.print(output);
@@ -223,49 +224,76 @@ void check_serial() {
     if (bt_serial.available()) {
         digitalWrite(MOSFET_GATE_PIN, LOW);
         char command = bt_serial.read();
-        byte value = 0;
         switch (command) {
-            case 't':
+        case 't':
+            while (!bt_serial.available());
+            command = bt_serial.read();
+            switch (command) {
+            case '=':
                 while (!bt_serial.available());
                 set_desired_temp(bt_serial.read());
+            case '?':
+                bt_serial.print("t;");
+                bt_serial.println(EEPROM.read(TEMPERATURE_EEPROM_ADDRESS));
                 break;
             default:
                 bt_serial.println("Unknown Command");
-        }
-    }
-
-    if (Serial.available()) {
-        digitalWrite(MOSFET_GATE_PIN, LOW);
-        if (Serial.read() == 'c') {
-            check_PID();
+            }
+            break;
+        case 'p':
+            while (!bt_serial.available());
+            command = bt_serial.read();
+            switch (command) {
+            case '=':
+                check_PID();
+            case '?':
+                bt_serial.print("p;");
+                bt_serial.print((float) EEPROM.read(PID_P_EEPROM_ADDRESS) / 10);
+                bt_serial.print(";");
+                bt_serial.print((float) EEPROM.read(PID_I_EEPROM_ADDRESS) / 10);
+                bt_serial.print(";");
+                bt_serial.println((float) EEPROM.read(PID_D_EEPROM_ADDRESS) / 10);
+                break;
+            default:
+                bt_serial.println("Unknown Command");
+            }
+        default:
+            bt_serial.println("Unknown Command");
         }
     }
 }
 
 void check_PID() {
-    while (!Serial.available());
-    switch(Serial.read()) {
-        case 'p':
-            while (!Serial.available());
-            pid_p = ((float) Serial.read()) / 10;
-            break;
-        case 'i':
-            while (!Serial.available());
-            pid_i = ((float) Serial.read()) / 10;
-            break;
-        case 'd':
-            while (!Serial.available());
-            pid_d = ((float) Serial.read()) / 10;
-            break;
-    }
+    while (!bt_serial.available());
+    byte p = bt_serial.read();
+    while (!bt_serial.available());
+    byte i = bt_serial.read();
+    while (!bt_serial.available());
+    byte d = bt_serial.read();
+
+    setPID(p, i, d);
 }
 
 float get_desired_temp() {
     return (float) EEPROM.read(TEMPERATURE_EEPROM_ADDRESS);
 }
 
+void loadPID() {
+    pid_p = (double) EEPROM.read(PID_P_EEPROM_ADDRESS) / 10;
+    pid_i = (double) EEPROM.read(PID_I_EEPROM_ADDRESS) / 10;
+    pid_d = (double) EEPROM.read(PID_D_EEPROM_ADDRESS) / 10;
+}
+
+void setPID(byte p, byte i, byte d) {
+    EEPROM.write(PID_P_EEPROM_ADDRESS, p);
+    EEPROM.write(PID_I_EEPROM_ADDRESS, i);
+    EEPROM.write(PID_D_EEPROM_ADDRESS, d);
+
+    loadPID();
+}
+
 int get_battery_percents(float voltage) {
-    int percent = (voltage - MINIMUM_VOLTAGE)/(MAXIMUM_VOLTAGE - MINIMUM_VOLTAGE) * 100;
+    int percent = (voltage - MINIMUM_VOLTAGE) / (MAXIMUM_VOLTAGE - MINIMUM_VOLTAGE) * 100;
     return percent < 0 ? 0 : percent;
 }
 
@@ -275,7 +303,7 @@ void set_desired_temp(byte new_temp) {
 }
 
 void delay_with_interrupt(int time, int interrupting_button_state) {
-  int counter = 0;
+    int counter = 0;
     while (digitalRead(BUTTON_PIN) != interrupting_button_state & counter < time) {
         counter++;
         delay(1);
